@@ -3,6 +3,8 @@ package hai913i.tp1;
 import java.nio.file.Path;
 import java.util.List;
 
+
+import hai913i.tp1.visitor.Visitor;
 import org.eclipse.jdt.core.compiler.IProblem;
 
 import hai913i.tp1.parse.JdtParser;
@@ -56,5 +58,8 @@ public final class Main {
         // À FAIRE (A1 et suite) : parcourir les AST avec vos visiteurs, construire votre modèle de faits,
         // puis calculer les métriques et le graphe d'appel. Gardez cette classe courte : elle lit les
         // arguments et délègue.
+       Visitor.displayTrees(files);
+
+
     }
 }
