@@ -25,5 +25,14 @@ public final class JdtNames {
         return names;
     }
 
+    public static String methodId(IMethodBinding method) {
+        IMethodBinding declaration = method.getMethodDeclaration();
+        return methodId(typeName(declaration.getDeclaringClass()), declaration.getName(),
+                parameterTypes(declaration));
+    }
+    public static String methodId(String typeName, String methodName, List<String> parameterTypes) {
+        return typeName + "#" + methodName + "(" + String.join(",", parameterTypes) + ")";
+    }
+
 
 }

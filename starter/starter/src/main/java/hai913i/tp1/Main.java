@@ -5,6 +5,7 @@ import java.util.List;
 
 
 import hai913i.tp1.extract.AstPrinter;
+import hai913i.tp1.extract.CallVisitor;
 import hai913i.tp1.extract.StructureVisitor;
 import org.eclipse.jdt.core.compiler.IProblem;
 
@@ -73,6 +74,15 @@ public final class Main {
             file.unit().accept(structure);
         }
         structure.printSummary();
+
+        // A3: method calls
+        System.out.println();
+        System.out.println("------- Appels ");
+        CallVisitor calls = new CallVisitor(System.out);
+        for (ParsedFile file : files) {
+            file.unit().accept(calls);
+        }
+        calls.printSummary();
     }
 
 }
