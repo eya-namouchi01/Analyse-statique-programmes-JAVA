@@ -1,9 +1,7 @@
 package hai913i.tp1.extract;
 
-import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.List;
-
+import hai913i.tp1.model.CallFact;
+import hai913i.tp1.model.ProjectFacts;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
@@ -17,26 +15,15 @@ import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 
 
 public class CallVisitor extends ASTVisitor {
-
-    public record CallInfo(String caller, String name, String receiver, String target, int line, String status) {
-    }
-
-    private final PrintStream out;
-    private final List<CallInfo> calls = new ArrayList<>();
-
-    private int methodInvocations;
-    private int superInvocations;
-    private int internal;
-    private int external;
-    private int unresolved;
+    private final ProjectFacts facts;
 
     private MethodDeclaration currentMethod;
     private String currentCaller;
     private String currentTypeName;
     private String currentSuperName;
 
-    public CallVisitor(PrintStream out) {
-        this.out = out;
+    public CallVisitor(ProjectFacts facts) {
+        this.facts = facts;
     }
 
     @Override
@@ -52,8 +39,6 @@ public class CallVisitor extends ASTVisitor {
             currentCaller = binding != null
                     ? JdtNames.methodId(binding)
                     : type.getName().getIdentifier() + "#" + node.getName().getIdentifier();
-            out.println();
-            out.println(currentCaller);
         }
         return true;
     }
@@ -68,7 +53,6 @@ public class CallVisitor extends ASTVisitor {
     @Override
     public boolean visit(MethodInvocation node) {
         if (currentMethod != null) {
-            methodInvocations++;
             IMethodBinding target = node.resolveMethodBinding();
             String receiver;
             if (node.getExpression() != null) {
@@ -79,7 +63,7 @@ public class CallVisitor extends ASTVisitor {
             } else {
                 receiver = currentTypeName;
             }
-            addCall(node.getName(), receiver, target);
+            addCall(node.getName(), receiver, target, false);
         }
         return true; // in case the arguments contain other calls
     }
@@ -87,67 +71,23 @@ public class CallVisitor extends ASTVisitor {
     @Override
     public boolean visit(SuperMethodInvocation node) {
         if (currentMethod != null) {
-            superInvocations++;
-            addCall(node.getName(), currentSuperName, node.resolveMethodBinding());
+            addCall(node.getName(), currentSuperName, node.resolveMethodBinding(), true);
         }
         return true;
     }
 
-    private void addCall(SimpleName name, String receiver, IMethodBinding target) {
+    private void addCall(SimpleName name, String receiver, IMethodBinding target, boolean superCall) {
         CompilationUnit unit = (CompilationUnit) name.getRoot();
         int line = unit.getLineNumber(name.getStartPosition());
 
         String targetId = null;
         String status;
         if (target == null) {
-            status = "non resolu";
-            unresolved++;
+            status = ProjectFacts.UNRESOLVED; //library missing from the classpath
         } else {
             targetId = JdtNames.methodId(target);
-            if (target.getDeclaringClass().isFromSource()) {
-                status = "interne";
-                internal++;
-            } else {
-                status = "externe";
-                external++;
-            }
+            status = target.getDeclaringClass().isFromSource() ? ProjectFacts.INTERNAL : ProjectFacts.EXTERNAL;
         }
-        calls.add(new CallInfo(currentCaller, name.getIdentifier(), receiver, targetId, line, status));
-        out.println("    ligne " + line + " : " + name.getIdentifier() + ", receveur " + receiver
-                + ", cible " + (targetId == null ? "non resolue" : targetId + " (" + status + ")"));
-    }
-
-    public void printSummary() {
-        out.println();
-        out.println("------- Resume des appels");
-        out.println("Appels      : " + calls.size() + " (" + methodInvocations + " MethodInvocation, " + superInvocations + " SuperMethodInvocation)");
-        out.println("Internes: " + internal);
-        out.println("Externes: " + external);
-        out.println("Non resolus : " + unresolved);
-    }
-
-    //Access to results (for the checkpoint test)
-    public List<CallInfo> calls() {
-        return calls;
-    }
-
-    public int methodInvocationCount() {
-        return methodInvocations;
-    }
-
-    public int superInvocationCount() {
-        return superInvocations;
-    }
-
-    public int internalCount() {
-        return internal;
-    }
-
-    public int externalCount() {
-        return external;
-    }
-
-    public int unresolvedCount() {
-        return unresolved;
+        facts.addCall(new CallFact(currentCaller, name.getIdentifier(), receiver, targetId, line, status, superCall));
     }
 }

@@ -1,50 +1,21 @@
 package hai913i.tp1.extract;
 
-import java.io.PrintStream;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
-import org.eclipse.jdt.core.dom.ASTNode;
-import org.eclipse.jdt.core.dom.ASTVisitor;
-import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
-import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
-import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
-import org.eclipse.jdt.core.dom.EnumDeclaration;
-import org.eclipse.jdt.core.dom.FieldDeclaration;
-import org.eclipse.jdt.core.dom.IMethodBinding;
-import org.eclipse.jdt.core.dom.ITypeBinding;
-import org.eclipse.jdt.core.dom.IVariableBinding;
-import org.eclipse.jdt.core.dom.Initializer;
-import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.Modifier;
-import org.eclipse.jdt.core.dom.RecordDeclaration;
-import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
-import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
-import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
+import hai913i.tp1.model.FieldFact;
+import hai913i.tp1.model.MethodFact;
+import hai913i.tp1.model.ProjectFacts;
+import hai913i.tp1.model.TypeFact;
+import org.eclipse.jdt.core.dom.*;
 
 public class StructureVisitor extends ASTVisitor {
 
     private static final String DEFAULT_PACKAGE = "(défaut)";
+    private final ProjectFacts facts;
 
-    private final PrintStream out;
-
-    //Checkpoint A2 result variables
-    private final Map<String, Integer> typesByKind = new LinkedHashMap<>();
-    private final Map<String, Integer> methodsByType = new LinkedHashMap<>();
-    private final Map<String, Integer> fieldsByType = new LinkedHashMap<>();
-    private final Map<String, List<String>> superclassesByType = new LinkedHashMap<>();
-    private final Map<String, String> fieldVisibilities = new LinkedHashMap<>(); // "Type#attribut" -> visibilité
-    private int constructorCount;
-
-    public StructureVisitor(PrintStream out) {
-        this.out = out;
-        for (String kind : List.of("classe", "interface", "enumeration", "record")) {
-            typesByKind.put(kind, 0);
-        }
+    public StructureVisitor(ProjectFacts facts) {
+        this.facts = facts;
     }
 
     @Override
@@ -74,8 +45,6 @@ public class StructureVisitor extends ASTVisitor {
         return true;
     }
 
-    // Pruning: the visitor only descends into member types.
-    //Annotation types are not counted; the other nodes are pruned because their subtrees may contain local or anonymous classes (members are read in bodyDeclarations())
     @Override
     public boolean visit(AnnotationTypeDeclaration node) {
         return false;
@@ -101,66 +70,47 @@ public class StructureVisitor extends ASTVisitor {
         return false;
     }
 
-    /**Handling a type: extraction, then display*/
+    /**Handling a type: extraction into the model*/
     private void handleType(AbstractTypeDeclaration node, String kind) {
         ITypeBinding binding = node.resolveBinding();
         String packageName = packageName(node);
         String name = binding != null ? JdtNames.typeName(binding) : astQualifiedName(node, packageName);
         boolean inInterface = kind.equals("interface");
-        List<String> superclasses = superclasses(node, binding);
-        List<String> interfaces = interfaces(binding);
 
-        out.println();
-        out.println(name + "  [" + kind + ", paquetage " + packageName + "]");
-        out.println("  superclasses : " + listOrNone(superclasses));
-        out.println("  interfaces: " + listOrNone(interfaces));
-
-        List<String> fieldLines = new ArrayList<>();
-        List<String> methodLines = new ArrayList<>();
-        int constructors = 0;
+        List<FieldFact> fields = new ArrayList<>();
+        List<MethodFact> methods = new ArrayList<>();
         for (Object member : node.bodyDeclarations()) {
             if (member instanceof FieldDeclaration field) {
                 String visibility = visibility(field.getModifiers(), inInterface);
                 for (Object o : field.fragments()) {
                     VariableDeclarationFragment fragment = (VariableDeclarationFragment) o;
-                    String fieldName = fragment.getName().getIdentifier();
-                    fieldLines.add("    " + visibility + " " + fieldType(field, fragment) + " " + fieldName);
-                    fieldVisibilities.put(name + "#" + fieldName, visibility);
+                    fields.add(new FieldFact(fragment.getName().getIdentifier(), fieldType(field, fragment), visibility));
                 }
             } else if (member instanceof MethodDeclaration method) {
-                List<String> parameterTypes = parameterTypes(method);
-                String label = method.isConstructor() ? "constructeur" : "methode";
-                methodLines.add("    " + label + " " + method.getName().getIdentifier()
-                        + "(" + String.join(", ", parameterTypes) + ") : "
-                        + parameterTypes.size() + " parametre(s)");
-                if (method.isConstructor()) {
-                    constructors++;
-                }
+                methods.add(methodFact(method, name));
             }
             // Member types: visited separately by their own visit. Initializer: not counted.
         }
 
-        out.println("  attributs (" + fieldLines.size() + ")");
-        fieldLines.forEach(out::println);
-        out.println("  methodes (" + methodLines.size() + ")");
-        methodLines.forEach(out::println);
-
-        typesByKind.merge(kind, 1, Integer::sum);
-        methodsByType.put(name, methodLines.size());
-        fieldsByType.put(name, fieldLines.size());
-        superclassesByType.put(name, superclasses);
-        constructorCount += constructors;
+        facts.addType(new TypeFact(name, packageName, kind, superclasses(node, binding), interfaces(binding), fields, methods));
+    }
+    private static MethodFact methodFact(MethodDeclaration method, String typeName) {
+        String name = method.getName().getIdentifier();
+        List<String> parameterTypes = parameterTypes(method);
+        // Same rule as the call targets of CallVisitor (JdtNames), so that calls and methods match in B3.
+        String id = JdtNames.methodId(typeName, name, parameterTypes);
+        return new MethodFact(id, name, parameterTypes, method.isConstructor(), bodyLines(method));
     }
 
-    /** Access to results (for the checkpoint test)*/
-    public void printSummary() {
-        out.println();
-        out.println("-------Resume de la structure");
-        out.println("Types : " + typeCount() + " (" + typesByKind.get("classe") + " classes, "
-                + typesByKind.get("interface") + " interfaces, " + typesByKind.get("enumeration")
-                + " enumerations, " + typesByKind.get("record") + " records)");
-        out.println("Methodes  : " + methodCount() + " dont " + constructorCount + " constructeurs");
-        out.println("Attributs : " + fieldCount());
+    private static int bodyLines(MethodDeclaration method) {
+        Block body = method.getBody();
+        if (body == null) {
+            return 0; // abstract or interface method
+        }
+        CompilationUnit unit = (CompilationUnit) method.getRoot();
+        int first = unit.getLineNumber(body.getStartPosition());
+        int last = unit.getLineNumber(body.getStartPosition() + body.getLength() - 1);
+        return last - first + 1;
     }
 
 
@@ -249,43 +199,4 @@ public class StructureVisitor extends ASTVisitor {
         return node.getParent() instanceof TypeDeclarationStatement;
     }
 
-    private static String listOrNone(List<String> names) {
-        return names.isEmpty() ? "(aucune)" : String.join(", ", names);
-    }
-
-    public int typeCount() {
-        return typesByKind.values().stream().mapToInt(Integer::intValue).sum();
-    }
-
-    public int typeCount(String kind) {
-        return typesByKind.getOrDefault(kind, 0);
-    }
-
-    public int methodCount() {
-        return methodsByType.values().stream().mapToInt(Integer::intValue).sum();
-    }
-
-    public int constructorCount() {
-        return constructorCount;
-    }
-
-    public int fieldCount() {
-        return fieldsByType.values().stream().mapToInt(Integer::intValue).sum();
-    }
-
-    public int methodCount(String type) {
-        return methodsByType.getOrDefault(type, -1);
-    }
-
-    public int fieldCount(String type) {
-        return fieldsByType.getOrDefault(type, -1);
-    }
-
-    public List<String> superclasses(String type) {
-        return superclassesByType.getOrDefault(type, List.of());
-    }
-
-    public String fieldVisibility(String type, String field) {
-        return fieldVisibilities.get(type + "#" + field);
-    }
 }

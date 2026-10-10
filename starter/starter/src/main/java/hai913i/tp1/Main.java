@@ -4,9 +4,10 @@ import java.nio.file.Path;
 import java.util.List;
 
 
-import hai913i.tp1.extract.AstPrinter;
-import hai913i.tp1.extract.CallVisitor;
-import hai913i.tp1.extract.StructureVisitor;
+
+import hai913i.tp1.extract.FactExtractor;
+import hai913i.tp1.model.ProjectFacts;
+import hai913i.tp1.report.FactsPrinter;
 import org.eclipse.jdt.core.compiler.IProblem;
 
 import hai913i.tp1.parse.JdtParser;
@@ -60,29 +61,12 @@ public final class Main {
         // À FAIRE (A1 et suite) : parcourir les AST avec vos visiteurs, construire votre modèle de faits,
         // puis calculer les métriques et le graphe d'appel. Gardez cette classe courte : elle lit les
         // arguments et délègue.
-       //AstPrinter.displayTrees(files);
-        //A2
-        for (ParsedFile file : files) {
-            String name = file.path().getFileName().toString();
-            if (name.equals("Dvd.java") || name.equals("Category.java")) {
-                AstPrinter.print(file);
-            }
-        }
-        System.out.println("-------Structure ");
-        StructureVisitor structure = new StructureVisitor(System.out);
-        for (ParsedFile file : files) {
-            file.unit().accept(structure);
-        }
-        structure.printSummary();
 
-        // A3: method calls
+        ProjectFacts facts = FactExtractor.extract(files);
+
+        FactsPrinter.printStructure(facts, System.out);
         System.out.println();
-        System.out.println("------- Appels ");
-        CallVisitor calls = new CallVisitor(System.out);
-        for (ParsedFile file : files) {
-            file.unit().accept(calls);
-        }
-        calls.printSummary();
+        FactsPrinter.printCalls(facts, System.out);
     }
 
 }
